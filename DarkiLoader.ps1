@@ -1,11 +1,11 @@
-# Author : Samlach22
+# Authors : Samlach22, Mahtwo
 # Description : Download a video from darkibox.com without the UI, Browser or 60 seconds limit
 # Version : 0.1
 # Date : 2024-01-30
 # Usage : Run the script with PowerShell 7
 
 #Requires -Version 7
-
+Invoke-Expression "$psscriptroot/libs/yt-dlp -U" # update yt-dlp
 function WaitUntilElementExistsAndClick($xpathValue) {
     while($true) {
         try {
@@ -14,6 +14,60 @@ function WaitUntilElementExistsAndClick($xpathValue) {
         }
         catch {
             # do nothing
+        }
+    }
+}
+
+Function Show-Menu () {
+    Param(
+        [Parameter(Mandatory = $True)][String]$MenuTitle,
+        [Parameter(Mandatory = $True)][array]$MenuOptions
+    )
+    $MaxValue = $MenuOptions.count - 1
+    $Selection = 0
+    $EnterPressed = $False
+    Clear-Host
+    While ($EnterPressed -eq $False) {
+        Write-Host "$MenuTitle"
+        For ($i = 0; $i -le $MaxValue; $i++) {
+            If ($i -eq $Selection) {
+                Write-Host -BackgroundColor Cyan -ForegroundColor Black "[ $($MenuOptions[$i]) ]"
+            }
+            Else {
+                Write-Host "  $($MenuOptions[$i])  "
+            }
+        }
+        $KeyInput = $host.ui.rawui.readkey("NoEcho,IncludeKeyDown").virtualkeycode
+        Switch ($KeyInput) {
+            13 {
+                $EnterPressed = $True
+                Return $Selection
+                Clear-Host
+                break
+            }
+            38 {
+                If ($Selection -eq 0) {
+                    $Selection = $MaxValue
+                }
+                Else {
+                    $Selection -= 1
+                }
+                Clear-Host
+                break
+            }
+            40 {
+                If ($Selection -eq $MaxValue) {
+                    $Selection = 0
+                }
+                Else {
+                    $Selection += 1
+                }
+                Clear-Host
+                break
+            }
+            Default {
+                Clear-Host
+            }
         }
     }
 }
@@ -43,23 +97,33 @@ $url = $args[0]
 #################
 $FirefoxDriver.Navigate().GoToUrl($url)
 $table = $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/div[4]/div[1]/div/div[2]/div/div/div/div[2]/div[2]/div/div/div[2]/div[1]/div/div/div/div[2]/table/tbody"))
+$filmName = $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/div[4]/div[1]/div/div[2]/div/div/div/div[1]/div[2]/div[1]/div/div[1]/div[1]/div")).Text
 
 ######################
 # LIST ALL THE LINKS #
 ######################
+$array = @()
 foreach ($tr in $table.FindElements([OpenQA.Selenium.By]::TagName("tr"))) {
     $tds = $tr.FindElements([OpenQA.Selenium.By]::TagName("td"))
-    $id = $tds[0].Text
+    # $id = $tds[0].Text
     $size = $tds[1].Text
     $quality = $tds[2].Text
     $language = $tds[3].Text.Replace("`r`n", " ").Replace("`n", " ") # the second replace is for linux usage
     $subtitle = $tds[4].Text
-    $uploader = $tds[5].Text
-    $date = $tds[6].Text
+    # $uploader = $tds[5].Text
+    # $date = $tds[6].Text
     $link = $tds[7].FindElement([OpenQA.Selenium.By]::TagName("a")).GetAttribute("href")
-    Write-Output "id = $id | size = $size | quality = $quality | language = $language | subtitle = $subtitle | uploader = $uploader | date = $date | link = $link"
+    # Write-Output "id = $id | size = $size | quality = $quality | language = $language | subtitle = $subtitle | uploader = $uploader | date = $date | link = $link"
+    $array += "$quality | $size | $language | $subtitle | $link"
 }
-# TODO : CREATE MENU TO SELECT THE LINK
+###############
+# CREATE MENU #
+###############
+$title = "******************************************`nWelcome to DarkiLoader. Choose your option:`n******************************************"
+$result = Show-Menu -MenuTitle $title -MenuOptions $array
+$link = $array[$result].Split("|")[-1].Trim()
+$quality = $array[$result].Split("|")[0].Trim()
+Write-Output "******************************************`nStart Downloading files, please wait`n******************************************"
 
 ##################
 # GET IDENTIFIER #
@@ -94,7 +158,11 @@ $FirefoxDriver.Navigate().GoToUrl($newUrl)
 $scripts = $FirefoxDriver.FindElements([OpenQA.Selenium.By]::TagName("script")) # get last script tag
 $script = $scripts[$scripts.Count - 2].GetAttribute("innerHTML")
 $downloadLink = $script.Substring($script.IndexOf('"') + 1, $script.IndexOf('"', $script.IndexOf('"') + 1) - $script.IndexOf('"') - 1)
-Invoke-WebRequest -Uri $downloadLink -OutFile "$psscriptroot\$identifier.m3u8" # download the file
+$filename = "$filmName - $quality.mkv"
+
+Write-Output "START DOWNLOADING $filename..."
+Invoke-Expression "$psscriptroot/libs/yt-dlp.exe -o '$filename' --no-warnings --enable-file-urls -q --progress --audio-multistreams --video-multistreams --sub-langs all -f mergeall[ext!*=mhtml] '$downloadLink'"
+Write-Output "END DOWNLOADING $filename"
 
 ###############
 # END SESSION #
