@@ -1,6 +1,6 @@
 # Authors : Samlach22, Mahtwo
 # Description : Download a video from darkibox.com without the UI, Browser or 60 seconds limit
-# Version : 0.1
+# Version : 0.2
 # Date : 2024-01-30
 # Usage : Run the script with PowerShell 7
 
@@ -16,6 +16,66 @@ function WaitUntilElementExistsAndClick($xpathValue) {
             # do nothing
         }
     }
+}
+
+function DownloadFromUrl {
+    Param
+    (
+         [Parameter(Mandatory=$true, Position=0)]
+         [string] $link,
+         [Parameter(Mandatory=$true, Position=1)]
+         [String] $filmName,
+         [Parameter(Mandatory=$true, Position=2)]
+         [String] $quality,
+         [Parameter(Mandatory=$false, Position=3)]
+         [String] $episode = ""
+    )
+
+    $FirefoxDriver.Navigate().GoToUrl($link)
+    WaitUntilElementExistsAndClick("/html/body/div[4]/div[1]/div/div[2]/div/div/div/div[2]/div/div[3]/div/form/button")
+    WaitUntilElementExistsAndClick("/html/body/div[4]/div[1]/div/div[2]/div/div/div/div[2]/div/a/button")
+    $FirefoxDriver.SwitchTo().Window($FirefoxDriver.WindowHandles[1]) > $null
+    # wait 2s
+    Start-Sleep -Seconds 2
+    $identifier = $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/main/section/div/form")).GetAttribute("action")
+    $identifier = $identifier.Substring($identifier.LastIndexOf("/") + 1)
+    <# THIS SECTION IS WHEN A DAY, THEY FIX THE IDENTIFIER IN THE BUTTON
+    while($true) {
+        try {
+            $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/main/section/div/form/input[7]")).Click()
+            break
+        }
+        catch {
+            # do nothing
+        }
+        # time to wait for the download
+        $time = $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/main/section/div/form/span")).Text
+        Write-Host -NoNewline "$time `r"
+    }
+    THIS SECTION IS WHEN A DAY, THEY FIX THE IDENTIFIER IN THE BUTTON #>
+    ######################
+    # DOWNLOAD M3U8 FILE #
+    ######################
+    $newUrl = "https://darkibox.com/embed-$identifier.html"
+    $FirefoxDriver.Navigate().GoToUrl($newUrl)
+    $scripts = $FirefoxDriver.FindElements([OpenQA.Selenium.By]::TagName("script")) # get last script tag
+    $script = $scripts[$scripts.Count - 2].GetAttribute("innerHTML")
+    $downloadLink = $script.Substring($script.IndexOf('"') + 1, $script.IndexOf('"', $script.IndexOf('"') + 1) - $script.IndexOf('"') - 1)
+    if($episode -ne "") {
+        $filename = "$filmName [$episode] $quality.mkv"
+    }
+    else {
+        $filename = "$filmName - $quality.mkv"
+    }
+    # close the current tab and go back to the main tab
+    $FirefoxDriver.Close()
+    $FirefoxDriver.SwitchTo().Window($FirefoxDriver.WindowHandles[0]) > $null
+    $FirefoxDriver.Navigate().Back()
+    $FirefoxDriver.Navigate().Back()
+
+    Write-Output "START DOWNLOADING $filename..."
+    Invoke-Expression "$psscriptroot/libs/yt-dlp.exe -o ""$filename"" --no-warnings --enable-file-urls -q --progress --audio-multistreams --video-multistreams --sub-langs all -f mergeall[ext!*=mhtml] ""$downloadLink"""
+    Write-Output "END DOWNLOADING $filename"
 }
 
 Function Show-Menu () {
@@ -86,7 +146,7 @@ $uBlockExtensionPath = "$psscriptroot\libs\uBlock0_1.55.1b28.firefox.signed.xpi"
 $FirefoxOption = New-Object OpenQA.Selenium.Firefox.FirefoxOptions
 $FirefoxOption.AddArguments("--start-maximized")
 $FirefoxOption.AddArguments("--hideCommandPromptWindow")
-#$FirefoxOption.AddArguments('--headless') # don't open the browser
+$FirefoxOption.AddArguments('--headless') # don't open the browser
 $FirefoxOption.AcceptInsecureCertificates = $true # Ignore the SSL non secure issue
 $FirefoxOption.AddArgument("--user-agent=$userAgent")
 $FirefoxOption.BinaryLocation = "$psscriptroot\firefox122\App\Firefox64\firefox.exe"
@@ -124,7 +184,7 @@ foreach ($div in $tableDiv.FindElements([OpenQA.Selenium.By]::ClassName("xxl:col
     }
 
     # Use regex to extract category information
-    $categoryRegex = '<a href="https://catalogue.darkino.pro\?category=[^"]+" wire:navigate="">([^<]*)</a>'
+    $categoryRegex = '<a href="https://[^"]+\?category=[^"]+" wire:navigate="">([^<]*)</a>'
     $categoryMatch = [regex]::Match($htmlContent, $categoryRegex)
     if ($categoryMatch.Success) {
         $category = $categoryMatch.Groups[1].Value.Trim()
@@ -138,10 +198,12 @@ foreach ($div in $tableDiv.FindElements([OpenQA.Selenium.By]::ClassName("xxl:col
     $linkMatch = [regex]::Match($htmlContent, $linkRegex)
     if ($linkMatch.Success) {
         $link = $linkMatch.Groups[1].Value.Trim()
-        $link
     }
 
     if ($film -ne "" -and $category -ne "") {
+        $film = $film -replace "  ", ""
+        $film = $film -replace "[\r\n]", ""
+        $film = $film -replace "-", " -"
         $resultArray += "$category | $film | $link"
     }
 }
@@ -161,73 +223,81 @@ $title = "******************************************`nHere is your search result
 $result = Show-Menu -MenuTitle $title -MenuOptions $array
 $link = $resultArray[$result].Split("|")[-1].Trim()
 
+$selectedFilmCategory = $resultArray[$result].Split("|")[0].Trim()
 $FirefoxDriver.Navigate().GoToUrl($link)
-$table = $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/div[4]/div[1]/div/div[2]/div/div/div/div[2]/div[2]/div/div/div[2]/div[1]/div/div/div/div[2]/table/tbody"))
+$table = $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/div[4]/div[1]/div/div[2]/div/div/div/div[2]/div[3]/div/div/div[2]/div/div/div/div/div[2]/table/tbody"))
 $filmName = $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/div[4]/div[1]/div/div[2]/div/div/div/div[1]/div[2]/div[1]/div/div[1]/div[1]/div")).Text
 ######################
 # LIST ALL THE LINKS #
 ######################
 $array = @()
-foreach ($tr in $table.FindElements([OpenQA.Selenium.By]::TagName("tr"))) {
-    $tds = $tr.FindElements([OpenQA.Selenium.By]::TagName("td"))
-    # $id = $tds[0].Text
-    $size = $tds[1].Text
-    $quality = $tds[2].Text
-    $language = $tds[3].Text.Replace("`r`n", " ").Replace("`n", " ") # the second replace is for linux usage
-    $subtitle = $tds[4].Text.Replace("`r`n", " ").Replace("`n", " ") # the second replace is for linux usage
-    # $uploader = $tds[5].Text
-    # $date = $tds[6].Text
-    $link = $tds[7].FindElement([OpenQA.Selenium.By]::TagName("a")).GetAttribute("href")
-    # Write-Output "id = $id | size = $size | quality = $quality | language = $language | subtitle = $subtitle | uploader = $uploader | date = $date | link = $link"
-    $array += "$quality | $size | $language | $subtitle | $link"
+if($selectedFilmCategory -eq "Films" -or $selectedFilmCategory -eq "Documentaire") {
+    foreach ($tr in $table.FindElements([OpenQA.Selenium.By]::TagName("tr"))) {
+        $tds = $tr.FindElements([OpenQA.Selenium.By]::TagName("td"))
+        # $id = $tds[0].Text
+        $size = $tds[1].Text
+        $quality = $tds[2].Text
+        $language = $tds[3].Text.Replace("`r`n", " ").Replace("`n", " ") # the second replace is for linux usage
+        $subtitle = $tds[4].Text.Replace("`r`n", " ").Replace("`n", " ") # the second replace is for linux usage
+        # $uploader = $tds[5].Text
+        # $date = $tds[6].Text
+        $link = $tds[7].FindElement([OpenQA.Selenium.By]::TagName("a")).GetAttribute("href")
+        # Write-Output "id = $id | size = $size | quality = $quality | language = $language | subtitle = $subtitle | uploader = $uploader | date = $date | link = $link"
+        $array += "$quality | $size | $language | $subtitle | $link"
+    }
+}
+else {
+    foreach ($tr in $table.FindElements([OpenQA.Selenium.By]::TagName("tr"))) {
+        $tds = $tr.FindElements([OpenQA.Selenium.By]::TagName("td"))
+        # $id = $tds[0].Text
+        $episode = $tds[1].Text
+        $size = $tds[2].Text
+        $quality = $tds[3].Text
+        $language = $tds[4].Text.Replace("`r`n", " ").Replace("`n", " ") # the second replace is for linux usage
+        $subtitle = $tds[5].Text.Replace("`r`n", " ").Replace("`n", " ") # the second replace is for linux usage
+        # $uploader = $tds[6].Text
+        # $date = $tds[7].Text
+        $link = $tds[8].FindElement([OpenQA.Selenium.By]::TagName("a")).GetAttribute("href")
+        # Write-Output "id = $id | size = $size | quality = $quality | language = $language | subtitle = $subtitle | uploader = $uploader | date = $date | link = $link"
+        $array += "Episode : $episode | $quality | $size | $language | $subtitle | $link"
+    }
+    $array += " --- DOWNLOAD ALL EPISODES --- "
 }
 ###############
 # CREATE MENU #
 ###############
 $title = "******************************************`nWelcome to DarkiLoader. Choose your option:`n******************************************"
 $result = Show-Menu -MenuTitle $title -MenuOptions $array
-$link = $array[$result].Split("|")[-1].Trim()
-$quality = $array[$result].Split("|")[0].Trim()
 Write-Output "******************************************`nStart Downloading files, please wait`n******************************************"
+if($selectedFilmCategory -eq "Films") {
+    $link = $array[$result].Split("|")[-1].Trim()
+    $quality = $array[$result].Split("|")[0].Trim()
+    DownloadFromUrl -link $link -filmName $filmName -quality $quality
+}
+else {
+    if($result -eq $array.Count - 1) { # if the user wants to download all episodes
+        foreach ($episode in $array) {
+            if($episode -ne $array[$array.Count - 1]) {
+                $link = $episode.Split("|")[-1].Trim()
+                $ep = $episode.Split("|")[0].Trim()
+                $quality = $episode.Split("|")[1].Trim()
+                DownloadFromUrl -link $link -filmName $filmName -quality $quality -episode $ep
+            }
+        }
+    }
+    else {
+        $link = $array[$result].Split("|")[-1].Trim()
+        $episode = $array[$result].Split("|")[0].Trim()
+        $quality = $array[$result].Split("|")[1].Trim()
+        DownloadFromUrl -link $link -filmName $filmName -quality $quality -episode $episode
+    }
+}
+
 ##################
 # GET IDENTIFIER #
 ##################
-$FirefoxDriver.Navigate().GoToUrl($link)
-WaitUntilElementExistsAndClick("/html/body/div[4]/div[1]/div/div[2]/div/div/div/div[2]/div/div[3]/div/form/button")
-WaitUntilElementExistsAndClick("/html/body/div[4]/div[1]/div/div[2]/div/div/div/div[2]/div/a/button")
-$FirefoxDriver.SwitchTo().Window($FirefoxDriver.WindowHandles[1]) > $null
-# wait 2s
-Start-Sleep -Seconds 2
-$identifier = $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/main/section/div/form")).GetAttribute("action")
-$identifier = $identifier.Substring($identifier.LastIndexOf("/") + 1)
-<# THIS SECTION IS WHEN A DAY, THEY FIX THE IDENTIFIER IN THE BUTTON
-while($true) {
-    try {
-        $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/main/section/div/form/input[7]")).Click()
-        break
-    }
-    catch {
-        # do nothing
-    }
-    # time to wait for the download
-    $time = $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath("/html/body/main/section/div/form/span")).Text
-    Write-Host -NoNewline "$time `r"
-}
-THIS SECTION IS WHEN A DAY, THEY FIX THE IDENTIFIER IN THE BUTTON #>
-######################
-# DOWNLOAD M3U8 FILE #
-######################
-$newUrl = "https://darkibox.com/embed-$identifier.html"
-$FirefoxDriver.Navigate().GoToUrl($newUrl)
-$scripts = $FirefoxDriver.FindElements([OpenQA.Selenium.By]::TagName("script")) # get last script tag
-$script = $scripts[$scripts.Count - 2].GetAttribute("innerHTML")
-$downloadLink = $script.Substring($script.IndexOf('"') + 1, $script.IndexOf('"', $script.IndexOf('"') + 1) - $script.IndexOf('"') - 1)
-$filename = "$filmName - $quality.mkv"
-$downloadLink
-$filename
-Write-Output "START DOWNLOADING $filename..."
-Invoke-Expression "$psscriptroot/libs/yt-dlp.exe -o ""$filename"" --no-warnings --enable-file-urls -q --progress --audio-multistreams --video-multistreams --sub-langs all -f mergeall[ext!*=mhtml] ""$downloadLink"""
-Write-Output "END DOWNLOADING $filename"
+
+
 
 ###############
 # END SESSION #
