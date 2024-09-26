@@ -132,6 +132,30 @@ Function Show-Menu () {
     }
 }
 
+function Get-FirefoxPortable {
+    # If FirefoxPortable is not installed
+    if (-Not (Test-Path -PathType Container $PSScriptRoot/libs/FirefoxPortable)) {
+        if (Test-Path -PathType Leaf $PSScriptRoot/libs/FirefoxPortable) {
+            Move-Item -Force $PSScriptRoot/libs/FirefoxPortable $PSScriptRoot/libs/FirefoxPortable.old
+            Write-Host 'Backed up file FirefoxPortable to FirefoxPortable.old'
+        }
+        $installerPath = (Get-Item "$PSScriptRoot\libs\*FirefoxPortable*paf*.exe").FullName
+        # If FirefoxPortable installer is not downloaded
+        if (-Not ($installerPath)) {
+            $installerUrl = 'https://download2.portableapps.com/portableapps/FirefoxPortable/FirefoxPortable_130.0.1_English.paf.exe'
+            $installerPath = "$PSScriptRoot\libs\" + $installerUrl.Substring($installerUrl.LastIndexOf('/') + 1)
+            Invoke-WebRequest -OutFile $installerPath $installerUrl
+        }
+        Write-Host 'Opening FirefoxPortable installer...Please complete installation and keep the default installation path'
+        Start-Process -Wait $installerPath -ArgumentList '-o', "$PSScriptRoot\libs\"
+    }
+    if (-Not (Test-Path -PathType Container $PSScriptRoot/libs/FirefoxPortable)) {
+        Write-Host 'FirefoxPortable not found. Please run the script again and install FirefoxPortable'
+        Exit 1
+    }
+    return , @("$PSScriptRoot\libs\FirefoxPortable\App\Firefox64\firefox.exe") # Force return type as array
+}
+
 ###################
 # IMPORT SELENIUM #
 ###################
@@ -149,7 +173,7 @@ $FirefoxOption.AddArguments("--hideCommandPromptWindow")
 $FirefoxOption.AddArguments('--headless') # don't open the browser
 $FirefoxOption.AcceptInsecureCertificates = $true # Ignore the SSL non secure issue
 $FirefoxOption.AddArgument("--user-agent=$userAgent")
-$FirefoxOption.BinaryLocation = "$psscriptroot\firefox122\App\Firefox64\firefox.exe"
+$FirefoxOption.BinaryLocation = (Get-FirefoxPortable)[-1] # Get last returned value (which is FirefoxPortable path)
 $FirefoxOption.SetPreference("xpinstall.signatures.required", $false);
 
 $FirefoxDriver = New-Object OpenQA.Selenium.Firefox.FirefoxDriver($FirefoxDriverPath, $FirefoxOption)
