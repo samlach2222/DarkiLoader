@@ -7,13 +7,17 @@
 #Requires -Version 7
 Invoke-Expression "$psscriptroot/libs/yt-dlp -U" # update yt-dlp
 function WaitUntilElementExistsAndClick($xpathValue) {
-    while($true) {
+    $timeoutDate = (Get-Date).AddSeconds(20) # 20 seconds timeout
+    while ($true) {
         try {
             $FirefoxDriver.FindElement([OpenQA.Selenium.By]::XPath($xpathValue)).Click()
             break
         }
         catch {
-            # do nothing
+            if ((Get-Date) -gt $timeoutDate) {
+                Write-Host "Timeout reached. Element $xpathValue not found."
+                break
+            }
         }
     }
 }
